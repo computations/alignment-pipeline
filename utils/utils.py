@@ -1,0 +1,92 @@
+import pathlib
+from dataclasses import dataclass
+from typing import Optional, Self
+
+
+@dataclass
+class Taxa:
+    name: str
+    start: Optional[int]
+    end: Optional[int]
+
+    @property
+    def fasta(self):
+        return ">" + self.formatted_name()
+
+    def formatted_name(self):
+        return f"{self.name}" + (f"_{self.start}-{self.end}"
+                                 if self.start is not None
+                                 and self.end is not None else "")
+
+    def json(self):
+        return {
+            'taxa': self.name,
+            'start': self.start,
+            'end': self.end
+
+        }
+
+    @staticmethod
+    def parse(line) -> Self:
+        line_parts = line.lstrip(">").strip().split('_')
+        name = line_parts[0]
+        if len(line_parts) > 1:
+            start, end = line_parts[1].split('-')
+        else:
+            start = None
+            end = None
+        return Taxa(name, start, end)
+
+
+@dataclass
+class Sequence:
+    taxa: Taxa
+    sequence: str
+
+    @staticmethod
+    def parse_lines(lines: list[str]) -> Self:
+        taxa = Taxa.parse(lines[0])
+        seq = ''.join(lines[1:])
+
+        return Sequence(taxa, seq)
+
+
+class Alignment:
+    def __init__(self,
+                 alignment_filename: Optional[pathlib.Path] = None):
+        self._sequences = []
+        if alignment_filename is not None:
+            with open(alignment_filename) as infile:
+                self._parse_alignment(infile)
+
+    def _parse_alignment(self, fp):
+        self._sequences = []
+        tmp_list = []
+
+        for line in fp:
+            if line[0] == ">" and len(tmp_list) != 0:
+                self._sequences.append(Sequence.parse_lines(tmp_list))
+                tmp_list = []
+            tmp_list.append(line.strip())
+
+        self._sequences.append(Sequence.parse_lines(tmp_list))
+
+    def split_alignment(self, pruned_taxa: set[str]) -> (Self, Self):
+        reference_alignment = Alignment()
+        query_alignment = Alignment()
+
+        for seq in self._sequences:
+            if seq.taxa.name in pruned_taxa:
+                query_alignment._sequences.append(seq)
+            else:
+                reference_alignment._sequences.append(seq)
+
+        return (reference_alignment, query_alignment)
+
+    def write_fasta(self, fp) -> None:
+        for seq in self._sequences:
+            fp.write(seq.taxa.fasta)
+            fp.write("\n")
+
+            fp.write(seq.sequence)
+            fp.write("\n")

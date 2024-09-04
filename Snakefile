@@ -1,0 +1,438 @@
+import pathlib
+import os
+import numpy
+import json
+import functools
+import csv
+import shutil
+
+from utils import utils, models, jplace
+
+import warnings
+
+
+with warnings.catch_warnings(action="ignore"):
+    import ete3
+
+
+workdir: config["prefix"]
+
+
+wildcard_constraints:
+    tree_iter="[0-9]+",
+    pruning_iter="[0-9]+",
+    damage_iter="[0-9]+",
+
+
+def expand_iter_list(config_base):
+    ret_list = []
+    for i in range(len(config_base)):
+        ret_list += [config_base[i]] * config_base[i]["iters"]
+    return ret_list
+
+
+def get_program_path(program):
+    if program in config:
+        return os.path.abspath(os.path.expanduser(config[program]))
+    return shutil.which(program)
+
+
+config["exp_trees"] = expand_iter_list(config["trees"])
+config["exp_models"] = expand_iter_list(config["models"])
+
+alisim = get_program_path("iqtree2")
+pygargammel = get_program_path("pygargammel")
+epang = get_program_path("epa-ng")
+
+#tools = ["muscle", "mafft", "clustalo"]
+tools = ["mafft", "clustalo"]
+
+csv_fields = [
+    "taxa",
+    "start",
+    "end",
+    "formatted_name",
+    "nd",
+    "e_nd",
+    "aligner",
+    "ds",
+    "ss",
+    "nf",
+    "ov",
+    "tree_iter",
+    "pruning_iter",
+    "damage_iter",
+]
+
+
+def make_intermediat_results_list():
+    files = []
+    for ti, tv in enumerate(config["exp_trees"]):
+        tree_path = pathlib.Path("t_" + str(ti))
+        for pi in range(tv["prunings"]):
+            pruning_path = tree_path / ("p_" + str(pi))
+            for di, dv in enumerate(config["exp_models"]):
+                damage_path = (
+                    pruning_path / ("d_" + str(di)) / "epa-ng" / "distances.csv"
+                )
+                files.append(damage_path)
+    return [str(f) for f in files]
+
+
+def make_results_list():
+    files = ["distances.csv"]
+    return files
+
+
+rule all:
+    input:
+        damage_fasta=make_results_list(),
+    log:
+      notebook = "plots.py.ipynb"
+    notebook:
+      "notebooks/plots.py.ipynb"
+
+
+rule make_tree:
+    output:
+        tree="t_{tree_iter}/tree.nwk",
+    params:
+        tree_config=(
+            lambda wildcards: config["exp_trees"][int(wildcards["tree_iter"])]
+        ),
+    run:
+        if params.tree_config["type"] == "Simulate":
+            shell(
+                "treegen "
+                + "-u "
+                + "--size {} ".format(params.tree_config["taxa"])
+                + "-t {} ".format(params.tree_config["height"])
+                + "> {output.tree}"
+            )
+        elif params.tree_config["type"] == "File":
+            tree_filename = params.tree_config["tree_filename"]
+            tree_filename = os.path.abspath(os.path.expanduser(tree_filename))
+            shutil.copyfile(tree_filename, output.tree)
+
+rule simulate_alignment:
+    input:
+        tree="t_{tree_iter}/tree.nwk",
+    output:
+        alignment="t_{tree_iter}/align.fasta",
+    log:
+        "t_{tree_iter}/logs/alisim.log",
+    params:
+        align_config=(
+            lambda wildcards: config["exp_trees"][int(wildcards["tree_iter"])]
+        ),
+    run:
+        if "align_filename" in params.align_config:
+            align_filename = params.align_config["align_filename"]
+            align_filename = os.path.abspath(os.path.expanduser(align_filename))
+            shutil.copyfile(align_filename, output.alignment)
+        else:
+            shell(
+                alisim
+                + " "
+                + "--alisim {output.alignment} "
+                + "-m {} ".format(params.align_config["model"])
+                + "-t {input.tree} "
+                + "--out-format fasta "
+                + "--length {} ".format(params.align_config["length"])
+                + "&> /dev/null;"
+                + "mv {output.alignment}.fa {output.alignment};"
+                + "mv {input.tree}.log {log}"
+            )
+
+
+rule make_pruning:
+    input:
+        tree="t_{tree_iter}/tree.nwk",
+    output:
+        tree="t_{tree_iter}/p_{pruning_iter}/pruned_tree.nwk",
+        json="t_{tree_iter}/p_{pruning_iter}/pruning_info.json",
+    retries: 
+      10
+    run:
+        base_tree = ete3.Tree(open(input.tree).read())
+        taxa_count = len(base_tree)
+        subtrees = []
+
+        min_taxa_subtree = (
+            config["min_taxa_subtree"] if "min_taxa_subtree" in config else 3
+        )
+        min_taxa_base = (
+            config["min_taxa_base"] if "min_taxa_base" in config else 7
+        )
+
+        for st in base_tree.traverse("postorder"):
+            st_size = len(st)
+            if (
+                taxa_count - st_size >= min_taxa_base
+                and st_size >= min_taxa_subtree
+            ):
+                subtrees.append(st)
+
+        assert len(subtrees) > 0, "Failed to find any valid subtrees to prune"
+
+        random_subtree_index = numpy.random.randint(0, len(subtrees))
+        random_subtree = subtrees[random_subtree_index]
+        subtree_leaves = set(n.name for n in random_subtree)
+        keep_leaves = set(n.name for n in base_tree) - subtree_leaves
+
+        base_tree.prune(
+            keep_leaves,
+            preserve_branch_length=True,
+        )
+
+        with open(output.tree, "w") as outfile:
+            outfile.write(base_tree.write())
+
+        with open(output.json, "w") as outfile:
+            json.dump(
+                {"pruned_leaves": list(subtree_leaves)},
+                outfile,
+            )
+
+
+rule split_alignment:
+    input:
+        json="t_{tree_iter}/p_{pruning_iter}/pruning_info.json",
+        alignment="t_{tree_iter}/align.fasta",
+    output:
+        reference_alignment_filename="t_{tree_iter}/p_{pruning_iter}/reference.fasta",
+        query_alignment_filename="t_{tree_iter}/p_{pruning_iter}/query.fasta",
+    run:
+        base_alignment = utils.Alignment(input.alignment)
+        with open(input.json) as infile:
+            info_json = json.load(infile)
+
+        (
+            reference_alignment,
+            query_alignment,
+        ) = base_alignment.split_alignment(info_json["pruned_leaves"])
+
+        with open(
+            output.reference_alignment_filename,
+            "w",
+        ) as outfile:
+            reference_alignment.write_fasta(outfile)
+
+        with open(
+            output.query_alignment_filename,
+            "w",
+        ) as outfile:
+            query_alignment.write_fasta(outfile)
+
+
+rule make_adna_damage_parameters:
+    output:
+        json="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/damage-params.json",
+    run:
+        model = config["exp_models"][int(wildcards.damage_iter)]
+        params = models.make_adna_parameter_set(model)
+        with open(output.json, "w") as outfile:
+            json.dump(params.dict, outfile)
+
+
+rule damage_query:
+    input:
+        align="t_{tree_iter}/p_{pruning_iter}/query.fasta",
+        params_file="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/damage-params.json",
+    output:
+        damaged_align="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/damage.fasta",
+    log:
+        gzip="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/logs/pygargammel.log.gz",
+        text="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/logs/pygargammel.log",
+    run:
+        model = config["exp_models"][int(wildcards.damage_iter)]
+
+        params = models.make_adna_parameter_set(model)
+        with open(input.params_file) as infile:
+            params.load(json.load(infile))
+
+        config_params = models.PyGargammelConfigParams()
+        files = models.PyGargammelFiles(
+            text=log.text,
+            gzip=log.text,
+            output=output.damaged_align,
+            input=input.align,
+        )
+
+        pyg = models.PyGargammelConfig(
+            pygargammel,
+            params=params,
+            config=config_params,
+            files=files,
+        )
+        shell(pyg.command)
+
+
+rule setup_aligners:
+    input:
+        reference="t_{tree_iter}/p_{pruning_iter}/reference.fasta",
+        damage="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/damage.fasta",
+    output:
+        seqs="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/seqs.fasta",
+    shell:
+        "cat {input.reference} {input.damage} > {output.seqs}"
+
+
+rule align_muscle:
+    input:
+        seqs="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/seqs.fasta",
+    output:
+        align="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/muscle/align.fasta",
+    conda:
+      "envs/muscle.yaml"
+    log:
+        "t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/muscle/align.log",
+    shell:
+        "muscle -align {input.seqs} -output {output.align} &> {log}"
+
+
+rule align_mafft:
+    input:
+        seqs="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/seqs.fasta",
+    output:
+        align="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/mafft/align.fasta",
+    conda:
+      "envs/mafft.yaml"
+    shell:
+        (
+            "mafft "
+            + "--quiet "
+            + "--auto "
+            + "{input.seqs} > "
+            + "{output.align}"
+        )
+
+
+rule align_clustalo:
+    input:
+        seqs="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/seqs.fasta",
+    output:
+        align="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/clustalo/align.fasta",
+    conda:
+      "envs/clustalo.yaml"
+    shell:
+        "clustalo --in {input.seqs} --out {output.align}"
+
+
+for tool in tools:
+
+    rule:
+        input:
+            align=f"t_{{tree_iter}}/p_{{pruning_iter}}/d_{{damage_iter}}/{tool}/align.fasta",
+            info=f"t_{{tree_iter}}/p_{{pruning_iter}}/pruning_info.json",
+        output:
+            reference=f"t_{{tree_iter}}/p_{{pruning_iter}}/d_{{damage_iter}}/{tool}/reference.fasta",
+            query=f"t_{{tree_iter}}/p_{{pruning_iter}}/d_{{damage_iter}}/{tool}/query.fasta",
+        run:
+            base_alignment = utils.Alignment(input.align)
+            with open(input.info) as infile:
+                info_json = json.load(infile)
+
+            (
+                reference_alignment,
+                query_alignment,
+            ) = base_alignment.split_alignment(info_json["pruned_leaves"])
+
+            with open(output.reference, "w") as outfile:
+                reference_alignment.write_fasta(outfile)
+
+            with open(output.query, "w") as outfile:
+                query_alignment.write_fasta(outfile)
+
+
+
+rule place_epang:
+    input:
+        tree="t_{tree_iter}/p_{pruning_iter}/pruned_tree.nwk",
+        reference="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/{tool}/reference.fasta",
+        query="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/{tool}/query.fasta",
+    output:
+        jplace="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/epa-ng/{tool}/epa_result.jplace",
+        dir=directory(
+            "t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/epa-ng/{tool}/"
+        ),
+    log:
+        "t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/epa-ng/{tool}/epa_info.log",
+    params:
+        model=(
+            lambda wildcards: config["exp_trees"][int(wildcards["tree_iter"])][
+                "model"
+            ]
+        ),
+    conda:
+      "envs/epang.yaml"
+    shell:
+        "epa-ng "
+        "--tree {input.tree} "
+        "--ref-msa {input.reference} "
+        "--query {input.query} "
+        "--model {params.model} "
+        "--outdir {output.dir} "
+        "--preserve-rooting on "
+        "--no-pre-mask "
+        "&> /dev/null"
+
+
+rule compute_distances:
+    input:
+        jplace=expand(
+            "t_{{tree_iter}}/p_{{pruning_iter}}/d_{{damage_iter}}/epa-ng/{tool}/epa_result.jplace",
+            tool=tools,
+        ),
+        json="t_{tree_iter}/p_{pruning_iter}/pruning_info.json",
+        tree="t_{tree_iter}/tree.nwk",
+        params="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/damage-params.json",
+    output:
+        csv="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/epa-ng/distances.csv",
+    params:
+        tools=tools,
+    run:
+        true_tree = ete3.Tree(open(input.tree).read())
+        removed_taxa = set(json.load(open(input.json))["pruned_leaves"])
+
+        model = config["exp_models"][int(wildcards.damage_iter)]
+        adna_params = models.make_adna_parameter_set(model).dict
+
+        with open(output.csv, "w") as outfile:
+            csv_file = csv.DictWriter(
+                outfile,
+                csv_fields,
+            )
+            csv_file.writeheader()
+            for tool, jp_file in zip(params.tools, input.jplace):
+                jp = jplace.Jplace(json.load(open(jp_file)), true_tree)
+                jp.set_true_tree(true_tree, removed_taxa)
+                jp.compute_nds()
+
+                for p in jp.placements:
+                    csv_file.writerow(
+                        p.json()
+                        | {
+                            "aligner": tool,
+                            "tree_iter": wildcards.tree_iter,
+                            "pruning_iter": wildcards.pruning_iter,
+                            "damage_iter": wildcards.damage_iter,
+                        }
+                        | adna_params
+                    )
+
+
+rule coalece_distances:
+    input:
+        csvs=make_intermediat_results_list(),
+    output:
+        final_csv="distances.csv",
+    run:
+        with open(output.final_csv, "w") as csv_file:
+            writer = csv.DictWriter(csv_file, csv_fields)
+            writer.writeheader()
+
+            for input_file in input.csvs:
+                reader = csv.DictReader(open(input_file))
+                for row in reader:
+                    writer.writerow(row)

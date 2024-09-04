@@ -1,0 +1,29 @@
+prefix: test
+trees:
+  - type: Simulate
+    taxa: 100
+    height: 0.5
+    model: GTR+G
+    length: 1000
+    iters: 4
+    prunings: 4
+models:
+  - nf:
+      type: Uniform
+      start: 0.0
+      end: 0.03
+    ov:
+      type: Uniform
+      start: 0.15
+      end: 1.0
+    ds:
+      type: Uniform
+      start: 0.0
+      end: 0.1
+    ss:
+      type: Uniform
+      start: 0.0
+      end: 0.65
+    iters: 4
+iqtree2: ~/wrk/hits/iqtree2/build/iqtree2
+pygargammel: ~/wrk/hits/pygargammel/pygargammel
