@@ -40,11 +40,9 @@ def get_program_path(program):
 config["exp_trees"] = expand_iter_list(config["trees"])
 config["exp_models"] = expand_iter_list(config["models"])
 
-alisim = get_program_path("iqtree2")
 pygargammel = get_program_path("pygargammel")
-epang = get_program_path("epa-ng")
 
-#tools = ["muscle", "mafft", "clustalo"]
+# tools = ["muscle", "mafft", "clustalo"]
 tools = ["mafft", "clustalo"]
 
 csv_fields = [
@@ -86,33 +84,90 @@ def make_results_list():
 
 rule all:
     input:
-        damage_fasta=make_results_list(),
-    log:
-      notebook = "plots.py.ipynb"
-    notebook:
-      "notebooks/plots.py.ipynb"
+        "html/plots.html",
 
+
+rule notebook:
+    input:
+        damage_fasta="distances.csv",
+    log:
+        notebook="notebooks/plots.py.ipynb",
+    notebook:
+        "notebooks/plots.py.ipynb"
+
+
+rule html:
+    input:
+        "notebooks/plots.py.ipynb",
+    output:
+        "html/plots.html",
+    shell:
+        "jupyter nbconvert --execute --to html --output-dir . --output {output} {input}"
+
+
+#rule make_tree:
+#    output:
+#        tree="t_{tree_iter}/tree.nwk",
+#    params:
+#        tree_config=(
+#            lambda wildcards: config["exp_trees"][int(wildcards["tree_iter"])]
+#        ),
+#    run:
+#        if params.tree_config["type"] == "Simulate":
+#            shell(
+#                "treegen "
+#                + "-u "
+#                + "--size {} ".format(params.tree_config["taxa"])
+#                + "-t {} ".format(params.tree_config["height"])
+#                + "> {output.tree}"
+#            )
+#        elif params.tree_config["type"] == "File":
+#            tree_filename = params.tree_config["tree_filename"]
+#            tree_filename = os.path.abspath(os.path.expanduser(tree_filename))
+#            shutil.copyfile(tree_filename, output.tree)
 
 rule make_tree:
     output:
-        tree="t_{tree_iter}/tree.nwk",
+        tree="t_{tree_iter}/tree.nwk"
     params:
-        tree_config=(
-            lambda wildcards: config["exp_trees"][int(wildcards["tree_iter"])]
-        ),
-    run:
-        if params.tree_config["type"] == "Simulate":
-            shell(
-                "treegen "
-                + "-u "
-                + "--size {} ".format(params.tree_config["taxa"])
-                + "-t {} ".format(params.tree_config["height"])
-                + "> {output.tree}"
-            )
-        elif params.tree_config["type"] == "File":
-            tree_filename = params.tree_config["tree_filename"]
-            tree_filename = os.path.abspath(os.path.expanduser(tree_filename))
-            shutil.copyfile(tree_filename, output.tree)
+        taxa = lambda wildcards:
+            config["exp_trees"][int(wildcards["tree_iter"])]['taxa']
+    conda:
+      "envs/alisim.yaml"
+    shell:
+      "iqtree " +
+      "-r {params.taxa} "
+      "{output.tree}; "
+      "rm {output.tree}.log"
+
+#rule simulate_alignment:
+#    input:
+#        tree="t_{tree_iter}/tree.nwk",
+#    output:
+#        alignment="t_{tree_iter}/align.fasta",
+#    log:
+#        "t_{tree_iter}/logs/alisim.log",
+#    params:
+#        align_config=(
+#            lambda wildcards: config["exp_trees"][int(wildcards["tree_iter"])]
+#        ),
+#    run:
+#        if "align_filename" in params.align_config:
+#            align_filename = params.align_config["align_filename"]
+#            align_filename = os.path.abspath(os.path.expanduser(align_filename))
+#            shutil.copyfile(align_filename, output.alignment)
+#        else:
+#            shell(
+#                "iqtree "
+#                + "--alisim {output.alignment} "
+#                + "-m {} ".format(params.align_config["model"])
+#                + "-t {input.tree} "
+#                + "--out-format fasta "
+#                + "--length {} ".format(params.align_config["length"])
+#                + "&> /dev/null;"
+#                + "mv {output.alignment}.fa {output.alignment};"
+#                + "mv {input.tree}.log {log}"
+#            )
 
 rule simulate_alignment:
     input:
@@ -122,27 +177,22 @@ rule simulate_alignment:
     log:
         "t_{tree_iter}/logs/alisim.log",
     params:
-        align_config=(
-            lambda wildcards: config["exp_trees"][int(wildcards["tree_iter"])]
-        ),
-    run:
-        if "align_filename" in params.align_config:
-            align_filename = params.align_config["align_filename"]
-            align_filename = os.path.abspath(os.path.expanduser(align_filename))
-            shutil.copyfile(align_filename, output.alignment)
-        else:
-            shell(
-                alisim
-                + " "
+      length = lambda wildcards:
+            config["exp_trees"][int(wildcards["tree_iter"])]['length'],
+      model = lambda wildcards:
+            config["exp_trees"][int(wildcards["tree_iter"])]['model'],
+    conda:
+      "envs/alisim.yaml"
+    shell:
+                "iqtree "
                 + "--alisim {output.alignment} "
-                + "-m {} ".format(params.align_config["model"])
+                + "-m {params.model} "
                 + "-t {input.tree} "
                 + "--out-format fasta "
-                + "--length {} ".format(params.align_config["length"])
+                + "--length {params.length} "
                 + "&> /dev/null;"
                 + "mv {output.alignment}.fa {output.alignment};"
                 + "mv {input.tree}.log {log}"
-            )
 
 
 rule make_pruning:
@@ -151,8 +201,7 @@ rule make_pruning:
     output:
         tree="t_{tree_iter}/p_{pruning_iter}/pruned_tree.nwk",
         json="t_{tree_iter}/p_{pruning_iter}/pruning_info.json",
-    retries: 
-      10
+    retries: 10
     run:
         base_tree = ete3.Tree(open(input.tree).read())
         taxa_count = len(base_tree)
@@ -284,7 +333,7 @@ rule align_muscle:
     output:
         align="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/muscle/align.fasta",
     conda:
-      "envs/muscle.yaml"
+        "envs/muscle.yaml"
     log:
         "t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/muscle/align.log",
     shell:
@@ -297,7 +346,7 @@ rule align_mafft:
     output:
         align="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/mafft/align.fasta",
     conda:
-      "envs/mafft.yaml"
+        "envs/mafft.yaml"
     shell:
         (
             "mafft "
@@ -314,7 +363,7 @@ rule align_clustalo:
     output:
         align="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/clustalo/align.fasta",
     conda:
-      "envs/clustalo.yaml"
+        "envs/clustalo.yaml"
     shell:
         "clustalo --in {input.seqs} --out {output.align}"
 
@@ -365,7 +414,7 @@ rule place_epang:
             ]
         ),
     conda:
-      "envs/epang.yaml"
+        "envs/epang.yaml"
     shell:
         "epa-ng "
         "--tree {input.tree} "

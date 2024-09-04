@@ -1,12 +1,12 @@
-prefix: test
+prefix: tmp
 trees:
   - type: Simulate
     taxa: 100
     height: 0.5
     model: GTR+G
     length: 1000
-    iters: 4
-    prunings: 4
+    iters: 1
+    prunings: 1
 models:
   - nf:
       type: Uniform
@@ -24,6 +24,6 @@ models:
       type: Uniform
       start: 0.0
       end: 0.65
-    iters: 4
+    iters: 1
 iqtree2: ~/wrk/hits/iqtree2/build/iqtree2
 pygargammel: ~/wrk/hits/pygargammel/pygargammel
