@@ -87,25 +87,39 @@ rule all:
         "html/plots.html",
 
 
-rule notebook:
+rule python_notebook:
     input:
         damage_fasta="distances.csv",
     log:
         notebook="notebooks/plots.py.ipynb",
+    conda:
+        "envs/jupyter.yaml"
     notebook:
         "notebooks/plots.py.ipynb"
+
+rule r_notebook:
+    input:
+        damage_fasta="distances.csv",
+    log:
+        notebook="notebooks/plots.r.ipynb",
+    conda:
+        "envs/jupyter.yaml"
+    notebook:
+        "notebooks/plots.r.ipynb"
 
 
 rule html:
     input:
-        "notebooks/plots.py.ipynb",
+        "notebooks/plots.r.ipynb",
     output:
         "html/plots.html",
+    conda:
+        "envs/jupyter.yaml"
     shell:
-        "jupyter nbconvert --execute --to html --output-dir . --output {output} {input}"
+        "jupyter nbconvert --to html --output-dir . --output {output} {input}"
 
 
-#rule make_tree:
+# rule make_tree:
 #    output:
 #        tree="t_{tree_iter}/tree.nwk",
 #    params:
@@ -126,21 +140,25 @@ rule html:
 #            tree_filename = os.path.abspath(os.path.expanduser(tree_filename))
 #            shutil.copyfile(tree_filename, output.tree)
 
+
 rule make_tree:
     output:
-        tree="t_{tree_iter}/tree.nwk"
+        tree="t_{tree_iter}/tree.nwk",
     params:
-        taxa = lambda wildcards:
-            config["exp_trees"][int(wildcards["tree_iter"])]['taxa']
+        taxa=lambda wildcards: config["exp_trees"][
+            int(wildcards["tree_iter"])
+        ]["taxa"],
     conda:
-      "envs/alisim.yaml"
+        "envs/alisim.yaml"
     shell:
-      "iqtree " +
-      "-r {params.taxa} "
-      "{output.tree}; "
-      "rm {output.tree}.log"
+        (
+            "iqtree " + "-r {params.taxa} "
+            "{output.tree}; "
+            "rm {output.tree}.log"
+        )
 
-#rule simulate_alignment:
+
+# rule simulate_alignment:
 #    input:
 #        tree="t_{tree_iter}/tree.nwk",
 #    output:
@@ -169,6 +187,7 @@ rule make_tree:
 #                + "mv {input.tree}.log {log}"
 #            )
 
+
 rule simulate_alignment:
     input:
         tree="t_{tree_iter}/tree.nwk",
@@ -177,22 +196,24 @@ rule simulate_alignment:
     log:
         "t_{tree_iter}/logs/alisim.log",
     params:
-      length = lambda wildcards:
-            config["exp_trees"][int(wildcards["tree_iter"])]['length'],
-      model = lambda wildcards:
-            config["exp_trees"][int(wildcards["tree_iter"])]['model'],
+        length=lambda wildcards: config["exp_trees"][
+            int(wildcards["tree_iter"])
+        ]["length"],
+        model=lambda wildcards: config["exp_trees"][
+            int(wildcards["tree_iter"])
+        ]["model"],
     conda:
-      "envs/alisim.yaml"
+        "envs/alisim.yaml"
     shell:
-                "iqtree "
-                + "--alisim {output.alignment} "
-                + "-m {params.model} "
-                + "-t {input.tree} "
-                + "--out-format fasta "
-                + "--length {params.length} "
-                + "&> /dev/null;"
-                + "mv {output.alignment}.fa {output.alignment};"
-                + "mv {input.tree}.log {log}"
+        "iqtree "
+        +"--alisim {output.alignment} "
+        +"-m {params.model} "
+        +"-t {input.tree} "
+        +"--out-format fasta "
+        +"--length {params.length} "
+        +"&> /dev/null;"
+        +"mv {output.alignment}.fa {output.alignment};"
+        +"mv {input.tree}.log {log}"
 
 
 rule make_pruning:

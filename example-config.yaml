@@ -1,4 +1,4 @@
-prefix: tmp
+prefix: run1
 trees:
   - type: Simulate
     taxa: 100
@@ -25,5 +25,4 @@ models:
       start: 0.0
       end: 0.65
     iters: 1
-iqtree2: ~/wrk/hits/iqtree2/build/iqtree2
 pygargammel: ~/wrk/hits/pygargammel/pygargammel

@@ -2,8 +2,12 @@ channels:
   - conda-forge
   - anaconda
 dependencies:
-  - python =3.8
-  - jupyter =1.0
-  - jupyterlab_code_formatter =1.4
+  - python 
+  - jupyter
   - pandas
   - seaborn
+  - nbconvert
+  - r
+  - r-ggplot2
+  - r-data.table
+  - r-cowplot
