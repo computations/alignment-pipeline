@@ -11,3 +11,4 @@ dependencies:
   - r-ggplot2
   - r-data.table
   - r-cowplot
+  - r-irkernel
