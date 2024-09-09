@@ -42,8 +42,8 @@ config["exp_models"] = expand_iter_list(config["models"])
 
 pygargammel = get_program_path("pygargammel")
 
-# tools = ["muscle", "mafft", "clustalo"]
-tools = ["mafft", "clustalo"]
+tools = ["muscle", "mafft", "clustalo"]
+# tools = ["mafft", "clustalo"]
 
 csv_fields = [
     "taxa",
@@ -358,7 +358,7 @@ rule align_muscle:
     log:
         "t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/muscle/align.log",
     shell:
-        "muscle -align {input.seqs} -output {output.align} &> {log}"
+        "muscle -super5 {input.seqs} -output {output.align} &> {log}"
 
 
 rule align_mafft:
