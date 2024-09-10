@@ -28,7 +28,9 @@ wildcard_constraints:
 def expand_iter_list(config_base):
     ret_list = []
     for i in range(len(config_base)):
-        ret_list += [config_base[i]] * config_base[i]["iters"]
+        iter_config = config_base[i]
+        iters = iter_config["iters"] if "iters" in iter_config else 1
+        ret_list += [iter_config] * iters
     return ret_list
 
 
@@ -67,7 +69,7 @@ def make_intermediat_results_list():
     files = []
     for ti, tv in enumerate(config["exp_trees"]):
         tree_path = pathlib.Path("t_" + str(ti))
-        for pi in range(tv["prunings"]):
+        for pi in range(tv['tree']["prunings"]):
             pruning_path = tree_path / ("p_" + str(pi))
             for di, dv in enumerate(config["exp_models"]):
                 damage_path = (

@@ -3,21 +3,20 @@ trees:
   - tree: 
       type: Simulate
       taxa: 10
+      prunings: 1
     alignment: 
       type: Simulate
       model: GTR+G
       length: 1000
-    iters: 1
-    prunings: 1
+    iters: 2
   - tree: 
       type: File
       filename: /home/computations/wrk/hits/adna/alignment-pipeline/test.nwk
+      prunings: 1
     alignment: 
       type: File
       filename: /home/computations/wrk/hits/adna/alignment-pipeline/test.fasta
       model: GTR+G
-    iters: 1
-    prunings: 1
 models:
   - nf:
       type: Uniform
