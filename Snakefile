@@ -355,9 +355,9 @@ rule hmm_build:
     input:
         reference="t_{tree_iter}/p_{pruning_iter}/reference.fasta",
     output:
-        hmm="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/hmmer/profile.hmm",
+        hmm="t_{tree_iter}/p_{pruning_iter}/hmmer/profile.hmm",
     log:
-        "t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/hmmer/profile.log",
+        "t_{tree_iter}/p_{pruning_iter}/hmmer/profile.log",
     conda:
         "envs/hmmer.yaml"
     shell:
@@ -366,7 +366,7 @@ rule hmm_build:
 
 rule align_hmmer:
     input:
-        hmm="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/hmmer/profile.hmm",
+        hmm="t_{tree_iter}/p_{pruning_iter}/hmmer/profile.hmm",
         reference="t_{tree_iter}/p_{pruning_iter}/reference.fasta",
         query="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/damage.fasta",
     output:
