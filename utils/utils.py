@@ -32,6 +32,7 @@ class Taxa:
         name = line_parts[0]
         if len(line_parts) > 1:
             start, end = line_parts[1].split('-')
+            start, end = int(start), int(end)
         else:
             start = None
             end = None
@@ -49,6 +50,14 @@ class Sequence:
         seq = ''.join(lines[1:])
 
         return Sequence(taxa, seq)
+
+    def realign(self, maxsize: int) -> Self:
+        prefix = '-' * self.taxa.start
+        suffix = '-' * (maxsize - self.taxa.end)
+        return Sequence(self.taxa, prefix + self.sequence + suffix)
+
+    def size(self):
+        return len(self.sequence)
 
 
 class Alignment:
@@ -70,6 +79,16 @@ class Alignment:
             tmp_list.append(line.strip())
 
         self._sequences.append(Sequence.parse_lines(tmp_list))
+
+    def align_to(self, ref_align: Self) -> Self:
+        new_size = ref_align.size
+        a = Alignment()
+        a._sequences = [s.realign(new_size) for s in self._sequences]
+        return a
+
+    @property
+    def size(self):
+        return max([s.size() for s in self._sequences])
 
     def split_alignment(self, pruned_taxa: set[str]) -> (Self, Self):
         reference_alignment = Alignment()

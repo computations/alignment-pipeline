@@ -59,6 +59,15 @@ class InverseGaussianRateDistribution(DistributionBase):
         return numpy.random.wald(self.mu, self.l)
 
 
+@dataclass
+class BetaDistribution(DistributionBase):
+    alpha: float
+    beta: float
+
+    def _get(self):
+        return numpy.random.beta(self.alpha, self.beta)
+
+
 Distribution = StaticDistribution | UniformDistribution \
     | GammaRateDistribution | LogNormalRateDistribution \
     | InverseGaussianRateDistribution
@@ -77,6 +86,8 @@ def make_distribution(type, **kwargs) -> Distribution:
         case "InverseGaussian":
             return InverseGaussianRateDistribution(
                 kwargs['mu'], kwargs['lambda'])
+        case "Beta":
+            return BetaDistribution(kwargs['alpha'], kwargs['beta'])
 
 
 def make_adna_parameter_set(config):

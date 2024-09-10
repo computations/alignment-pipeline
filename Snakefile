@@ -45,7 +45,7 @@ config["exp_models"] = expand_iter_list(config["models"])
 
 pygargammel = get_program_path("pygargammel")
 
-tools = ["muscle", "mafft", "clustalo", "hmmer"]
+tools = ["muscle", "mafft", "clustalo", "hmmer", "null"]
 
 csv_fields = [
     "taxa",
@@ -69,7 +69,7 @@ def make_intermediat_results_list():
     files = []
     for ti, tv in enumerate(config["exp_trees"]):
         tree_path = pathlib.Path("t_" + str(ti))
-        for pi in range(tv['tree']["prunings"]):
+        for pi in range(tv["tree"]["prunings"]):
             pruning_path = tree_path / ("p_" + str(pi))
             for di, dv in enumerate(config["exp_models"]):
                 damage_path = (
@@ -481,6 +481,22 @@ rule align_clustalo:
     shell:
         "clustalo --in {input.seqs} --out {output.align}"
 
+
+rule align_null:
+    input:
+        reference="t_{tree_iter}/p_{pruning_iter}/reference.fasta",
+        query="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/damage.fasta",
+    output:
+        align="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/null/align.fasta",
+    run:
+        query_align = utils.Alignment(input.query)
+        reference_align = utils.Alignment(input.reference)
+
+        realigned_query_align = query_align.align_to(reference_align)
+
+        with open(output.align, "w") as outfile:
+            reference_align.write_fasta(outfile)
+            realigned_query_align.write_fasta(outfile)
 
 for tool in tools:
 

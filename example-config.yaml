@@ -9,19 +9,11 @@ trees:
       model: GTR+G
       length: 1000
     iters: 2
-  - tree: 
-      type: File
-      filename: /home/computations/wrk/hits/adna/alignment-pipeline/test.nwk
-      prunings: 1
-    alignment: 
-      type: File
-      filename: /home/computations/wrk/hits/adna/alignment-pipeline/test.fasta
-      model: GTR+G
 models:
   - nf:
-      type: Uniform
-      start: 0.0
-      end: 0.03
+      type: Beta
+      alpha: 1.0
+      beta: 5.0
     ov:
       type: Uniform
       start: 0.15
@@ -34,5 +26,5 @@ models:
       type: Uniform
       start: 0.0
       end: 0.65
-    iters: 1
+    iters: 10
 pygargammel: ~/wrk/hits/pygargammel/pygargammel
