@@ -120,35 +120,11 @@ rule html:
         "jupyter nbconvert --to html --output-dir . --output {output} {input}"
 
 
-# rule make_tree:
-#    output:
-#        tree="t_{tree_iter}/tree.nwk",
-#    params:
-#        tree_config=(
-#            lambda wildcards: config["exp_trees"][int(wildcards["tree_iter"])]
-#        ),
-#    run:
-#        if params.tree_config["type"] == "Simulate":
-#            shell(
-#                "treegen "
-#                + "-u "
-#                + "--size {} ".format(params.tree_config["taxa"])
-#                + "-t {} ".format(params.tree_config["height"])
-#                + "> {output.tree}"
-#            )
-#        elif params.tree_config["type"] == "File":
-#            tree_filename = params.tree_config["tree_filename"]
-#            tree_filename = os.path.abspath(os.path.expanduser(tree_filename))
-#            shutil.copyfile(tree_filename, output.tree)
-
-
 rule make_tree:
     output:
-        tree="t_{tree_iter}/tree.nwk",
+        tree="t_{tree_iter}/alisim/tree.nwk",
     params:
-        taxa=lambda wildcards: config["exp_trees"][
-            int(wildcards["tree_iter"])
-        ]["taxa"],
+        taxa=lookup(dpath="exp_trees/{tree_iter}/tree/taxa", within=config),
     conda:
         "envs/alisim.yaml"
     shell:
@@ -159,50 +135,39 @@ rule make_tree:
         )
 
 
-# rule simulate_alignment:
-#    input:
-#        tree="t_{tree_iter}/tree.nwk",
-#    output:
-#        alignment="t_{tree_iter}/align.fasta",
-#    log:
-#        "t_{tree_iter}/logs/alisim.log",
-#    params:
-#        align_config=(
-#            lambda wildcards: config["exp_trees"][int(wildcards["tree_iter"])]
-#        ),
-#    run:
-#        if "align_filename" in params.align_config:
-#            align_filename = params.align_config["align_filename"]
-#            align_filename = os.path.abspath(os.path.expanduser(align_filename))
-#            shutil.copyfile(align_filename, output.alignment)
-#        else:
-#            shell(
-#                "iqtree "
-#                + "--alisim {output.alignment} "
-#                + "-m {} ".format(params.align_config["model"])
-#                + "-t {input.tree} "
-#                + "--out-format fasta "
-#                + "--length {} ".format(params.align_config["length"])
-#                + "&> /dev/null;"
-#                + "mv {output.alignment}.fa {output.alignment};"
-#                + "mv {input.tree}.log {log}"
-#            )
+rule copy_tree:
+    output:
+        tree="t_{tree_iter}/tree.nwk",
+    input:
+        tree=branch(
+            lookup(dpath="exp_trees/{tree_iter}/tree/type", within=config),
+            cases={
+                "Simulate": "t_{tree_iter}/alisim/tree.nwk",
+                "File": lookup(
+                    dpath="exp_trees/{tree_iter}/tree/filename", within=config
+                ),
+            },
+        ),
+    run:
+        p1 = pathlib.Path(input.tree).resolve()
+        p2 = pathlib.Path(output.tree).resolve()
+        p2.symlink_to(p1)
 
 
 rule simulate_alignment:
     input:
         tree="t_{tree_iter}/tree.nwk",
     output:
-        alignment="t_{tree_iter}/align.fasta",
+        alignment="t_{tree_iter}/alisim/align.fasta",
     log:
-        "t_{tree_iter}/logs/alisim.log",
+        "t_{tree_iter}/alisim/alisim.log",
     params:
-        length=lambda wildcards: config["exp_trees"][
-            int(wildcards["tree_iter"])
-        ]["length"],
-        model=lambda wildcards: config["exp_trees"][
-            int(wildcards["tree_iter"])
-        ]["model"],
+        length=lookup(
+            dpath="exp_trees/{tree_iter}/alignment/length", within=config
+        ),
+        model=lookup(
+            dpath="exp_trees/{tree_iter}/alignment/model", within=config
+        ),
     conda:
         "envs/alisim.yaml"
     shell:
@@ -215,6 +180,28 @@ rule simulate_alignment:
         +"&> /dev/null;"
         +"mv {output.alignment}.fa {output.alignment};"
         +"mv {input.tree}.log {log}"
+
+
+rule copy_alignment:
+    output:
+        align="t_{tree_iter}/align.fasta",
+    input:
+        align=branch(
+            lookup(
+                dpath="exp_trees/{tree_iter}/alignment/type", within=config
+            ),
+            cases={
+                "File": lookup(
+                    dpath="exp_trees/{tree_iter}/alignment/filename",
+                    within=config,
+                ),
+                "Simulate": "t_{tree_iter}/alisim/align.fasta",
+            },
+        ),
+    run:
+        p1 = pathlib.Path(input.align).resolve()
+        p2 = pathlib.Path(output.align).resolve()
+        p2.symlink_to(p1)
 
 
 rule make_pruning:
@@ -351,6 +338,7 @@ rule setup_aligners:
 
 # Code for hmmer taken from PEWO
 
+
 rule hmm_build:
     input:
         reference="t_{tree_iter}/p_{pruning_iter}/reference.fasta",
@@ -374,7 +362,7 @@ rule align_hmmer:
     log:
         "t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/hmmer/align.log",
     conda:
-      "envs/hmmer.yaml"
+        "envs/hmmer.yaml"
     shell:
         (
             "hmmalign "
@@ -387,61 +375,68 @@ rule align_hmmer:
             "&> {log}"
         )
 
+
 rule hmmer_psiblast_to_fasta:
-  input:
-      psiblast="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/hmmer/align.psiblast",
-  output:
-      query="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/hmmer/align.fasta",
-  run:
-    with open(input.psiblast, "r") as f_in:
-      lines = f_in.readlines()
+    input:
+        psiblast="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/hmmer/align.psiblast",
+    output:
+        query="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/hmmer/align.fasta",
+    run:
+        with open(input.psiblast, "r") as f_in:
+            lines = f_in.readlines()
 
-    # dict to see which header has already been found
-    headers = collections.OrderedDict()
-    # when reading all seq ids at 1st block (before 1st empty line)
-    # check if duplicate names
-    firstblock = 1
-    line_block = 0
-    duplicate = {}  # map(line_block)=new_identifier
-    duplicate_index = {}  # map(identifier)=#duplicate_envountered_in_block
-    # read psiblast alignment
-    for line in lines:
-        # skip empty lines, reset block at empty lines
-        if (len(line.strip()) < 1):
-            firstblock = 0
-            line_block = 0
-            continue
-        # load sequences
-        elts = line.strip().split()
+            # dict to see which header has already been found
+        headers = collections.OrderedDict()
+        # when reading all seq ids at 1st block (before 1st empty line)
+        # check if duplicate names
+        firstblock = 1
+        line_block = 0
+        duplicate = {}  # map(line_block)=new_identifier
+        duplicate_index = {}  # map(identifier)=#duplicate_envountered_in_block
+        # read psiblast alignment
+        for line in lines:
+            # skip empty lines, reset block at empty lines
+            if len(line.strip()) < 1:
+                firstblock = 0
+                line_block = 0
+                continue
+                # load sequences
+            elts = line.strip().split()
 
-        # identifier never encountered, register it
-        if (elts[0] not in headers):
-            headers[elts[0]] = elts[1]
-        else:
-            # if still in block 1
-            if ((firstblock == 1) and (elts[0] in headers)):
-                # set counter of how many times we encountered this id
-                if (elts[0] not in duplicate_index):
-                    duplicate_index[elts[0]] = 0
-                else:
-                    duplicate_index[elts[0]] = duplicate_index[elts[0]]+1
-                # create new id
-                duplicate[line_block] = elts[0] + \
-                    '_'+str(duplicate_index[elts[0]])
-                print("duplicate at "+str(line_block) +
-                      " id set to "+duplicate[line_block])
-                headers[duplicate[line_block]] = ""
-            if (line_block in duplicate):
-                headers[duplicate[line_block]
-                        ] = headers[duplicate[line_block]]+elts[1]
+            # identifier never encountered, register it
+            if elts[0] not in headers:
+                headers[elts[0]] = elts[1]
             else:
-                headers[elts[0]] = headers[elts[0]]+elts[1]
+                # if still in block 1
+                if (firstblock == 1) and (elts[0] in headers):
+                    # set counter of how many times we encountered this id
+                    if elts[0] not in duplicate_index:
+                        duplicate_index[elts[0]] = 0
+                    else:
+                        duplicate_index[elts[0]] = duplicate_index[elts[0]] + 1
+                        # create new id
+                    duplicate[line_block] = (
+                        elts[0] + "_" + str(duplicate_index[elts[0]])
+                    )
+                    print(
+                        "duplicate at "
+                        + str(line_block)
+                        + " id set to "
+                        + duplicate[line_block]
+                    )
+                    headers[duplicate[line_block]] = ""
+                if line_block in duplicate:
+                    headers[duplicate[line_block]] = (
+                        headers[duplicate[line_block]] + elts[1]
+                    )
+                else:
+                    headers[elts[0]] = headers[elts[0]] + elts[1]
 
-        line_block = line_block+1
+            line_block = line_block + 1
 
-    with open(output.query, "w") as f_out:
-      for key in headers.keys():
-          f_out.write(">"+key+"\n"+headers[key]+"\n")
+        with open(output.query, "w") as f_out:
+            for key in headers.keys():
+                f_out.write(">" + key + "\n" + headers[key] + "\n")
 
 
 rule align_muscle:
@@ -523,13 +518,11 @@ rule place_epang:
             "t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/epa-ng/{tool}/"
         ),
     log:
-        info = "t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/epa-ng/{tool}/epa_info.log",
-        run = "t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/epa-ng/{tool}/epa_run.log",
+        info="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/epa-ng/{tool}/epa_info.log",
+        run="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/epa-ng/{tool}/epa_run.log",
     params:
-        model=(
-            lambda wildcards: config["exp_trees"][int(wildcards["tree_iter"])][
-                "model"
-            ]
+        model=lookup(
+            dpath="exp_trees/{tree_iter}/alignment/model", within=config
         ),
     conda:
         "envs/epang.yaml"
