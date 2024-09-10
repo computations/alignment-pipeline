@@ -5,6 +5,7 @@ import json
 import functools
 import csv
 import shutil
+import collections
 
 from utils import utils, models, jplace
 
@@ -42,8 +43,7 @@ config["exp_models"] = expand_iter_list(config["models"])
 
 pygargammel = get_program_path("pygargammel")
 
-tools = ["muscle", "mafft", "clustalo"]
-# tools = ["mafft", "clustalo"]
+tools = ["muscle", "mafft", "clustalo", "hmmer"]
 
 csv_fields = [
     "taxa",
@@ -96,6 +96,7 @@ rule python_notebook:
         "envs/jupyter.yaml"
     notebook:
         "notebooks/plots.py.ipynb"
+
 
 rule r_notebook:
     input:
@@ -348,6 +349,101 @@ rule setup_aligners:
         "cat {input.reference} {input.damage} > {output.seqs}"
 
 
+# Code for hmmer taken from PEWO
+
+rule hmm_build:
+    input:
+        reference="t_{tree_iter}/p_{pruning_iter}/reference.fasta",
+    output:
+        hmm="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/hmmer/profile.hmm",
+    log:
+        "t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/hmmer/profile.log",
+    conda:
+        "envs/hmmer.yaml"
+    shell:
+        "hmmbuild --cpu {threads} --dna {output.hmm} {input.reference} &> {log}"
+
+
+rule align_hmmer:
+    input:
+        hmm="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/hmmer/profile.hmm",
+        reference="t_{tree_iter}/p_{pruning_iter}/reference.fasta",
+        query="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/damage.fasta",
+    output:
+        psiblast="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/hmmer/align.psiblast",
+    log:
+        "t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/hmmer/align.log",
+    conda:
+      "envs/hmmer.yaml"
+    shell:
+        (
+            "hmmalign "
+            "--dna "
+            "--outformat PSIBLAST "
+            "-o {output.psiblast} "
+            "--mapali {input.reference} "
+            "{input.hmm} "
+            "{input.query} "
+            "&> {log}"
+        )
+
+rule hmmer_psiblast_to_fasta:
+  input:
+      psiblast="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/hmmer/align.psiblast",
+  output:
+      query="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/hmmer/align.fasta",
+  run:
+    with open(input.psiblast, "r") as f_in:
+      lines = f_in.readlines()
+
+    # dict to see which header has already been found
+    headers = collections.OrderedDict()
+    # when reading all seq ids at 1st block (before 1st empty line)
+    # check if duplicate names
+    firstblock = 1
+    line_block = 0
+    duplicate = {}  # map(line_block)=new_identifier
+    duplicate_index = {}  # map(identifier)=#duplicate_envountered_in_block
+    # read psiblast alignment
+    for line in lines:
+        # skip empty lines, reset block at empty lines
+        if (len(line.strip()) < 1):
+            firstblock = 0
+            line_block = 0
+            continue
+        # load sequences
+        elts = line.strip().split()
+
+        # identifier never encountered, register it
+        if (elts[0] not in headers):
+            headers[elts[0]] = elts[1]
+        else:
+            # if still in block 1
+            if ((firstblock == 1) and (elts[0] in headers)):
+                # set counter of how many times we encountered this id
+                if (elts[0] not in duplicate_index):
+                    duplicate_index[elts[0]] = 0
+                else:
+                    duplicate_index[elts[0]] = duplicate_index[elts[0]]+1
+                # create new id
+                duplicate[line_block] = elts[0] + \
+                    '_'+str(duplicate_index[elts[0]])
+                print("duplicate at "+str(line_block) +
+                      " id set to "+duplicate[line_block])
+                headers[duplicate[line_block]] = ""
+            if (line_block in duplicate):
+                headers[duplicate[line_block]
+                        ] = headers[duplicate[line_block]]+elts[1]
+            else:
+                headers[elts[0]] = headers[elts[0]]+elts[1]
+
+        line_block = line_block+1
+
+    with open(output.query, "w") as f_out:
+      for key in headers.keys():
+          f_out.write(">"+key+"\n"+headers[key]+"\n")
+
+
 rule align_muscle:
     input:
         seqs="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/seqs.fasta",
@@ -427,7 +523,8 @@ rule place_epang:
             "t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/epa-ng/{tool}/"
         ),
     log:
-        "t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/epa-ng/{tool}/epa_info.log",
+        info = "t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/epa-ng/{tool}/epa_info.log",
+        run = "t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/epa-ng/{tool}/epa_run.log",
     params:
         model=(
             lambda wildcards: config["exp_trees"][int(wildcards["tree_iter"])][
@@ -445,7 +542,7 @@ rule place_epang:
         "--outdir {output.dir} "
         "--preserve-rooting on "
         "--no-pre-mask "
-        "&> /dev/null"
+        "&> {log.run}"
 
 
 rule compute_distances:
