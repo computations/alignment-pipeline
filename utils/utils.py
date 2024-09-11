@@ -8,22 +8,25 @@ class Taxa:
     name: str
     start: Optional[int]
     end: Optional[int]
+    replicate: Optional[int]
 
     @property
     def fasta(self):
         return ">" + self.formatted_name()
 
     def formatted_name(self):
-        return f"{self.name}" + (f"_{self.start}-{self.end}"
+        return f"{self.name}" + (f"_{self.start}-{self.end}-{self.replicate}"
                                  if self.start is not None
-                                 and self.end is not None else "")
+                                 and self.end is not None
+                                 and self.replicate is not None
+                                 else "")
 
     def json(self):
         return {
             'taxa': self.name,
             'start': self.start,
-            'end': self.end
-
+            'end': self.end,
+            'replicate': self.replicate,
         }
 
     @staticmethod
@@ -31,12 +34,13 @@ class Taxa:
         line_parts = line.lstrip(">").strip().split('_')
         name = line_parts[0]
         if len(line_parts) > 1:
-            start, end = line_parts[1].split('-')
-            start, end = int(start), int(end)
+            start, end, replicate = line_parts[1].split('-')
+            start, end, replicate = int(start), int(end), int(replicate)
         else:
             start = None
             end = None
-        return Taxa(name, start, end)
+            replicate = None
+        return Taxa(name, start, end, replicate)
 
 
 @dataclass

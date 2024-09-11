@@ -59,7 +59,7 @@ class InverseGaussianRateDistribution(DistributionBase):
         return numpy.random.wald(self.mu, self.l)
 
 
-@dataclass
+@ dataclass
 class BetaDistribution(DistributionBase):
     alpha: float
     beta: float
@@ -73,12 +73,12 @@ class ClampedBetaDistribution(BetaDistribution):
 
     def _get(self):
         while True:
-            val = numpy.random.beta(self.alpha, self.beta)
+            val=numpy.random.beta(self.alpha, self.beta)
             if val <= self.max:
                 return val
 
 
-Distribution = (StaticDistribution | UniformDistribution
+Distribution=(StaticDistribution | UniformDistribution
                 | GammaRateDistribution | LogNormalRateDistribution
                 | InverseGaussianRateDistribution | BetaDistribution
                 | ClampedBetaDistribution)
@@ -105,7 +105,7 @@ def make_distribution(type, **kwargs) -> Distribution:
 
 
 def make_adna_parameter_set(config):
-    params = ADNADamageParameterSet(
+    params=ADNADamageParameterSet(
         make_distribution(**config['nf']),
         make_distribution(**config['ov']),
         make_distribution(**config['ds']),
@@ -114,14 +114,14 @@ def make_adna_parameter_set(config):
     return params
 
 
-@dataclass
+@ dataclass
 class ADNADamageParameterSet:
     nf: Distribution
     ov: Distribution
     ds: Distribution
     ss: Distribution
 
-    @property
+    @ property
     def dict(self):
         return {
             "nf": self.nf(),
@@ -137,17 +137,17 @@ class ADNADamageParameterSet:
         self.ss.lock(p['ss'])
 
 
-@dataclass
+@ dataclass
 class PyGargammelConfigParams:
-    min_frags: int = 10
-    max_frags: int = 100
-    min_length: int = 15
-    ungap: bool = True
-    align: bool = False
-    format: bool = True
+    min_frags: int=10
+    max_frags: int=100
+    min_length: int=15
+    ungap: bool=True
+    align: bool=False
+    format: bool=True
 
 
-@dataclass
+@ dataclass
 class PyGargammelFiles:
     gzip: pathlib.Path
     text: pathlib.Path
@@ -155,14 +155,14 @@ class PyGargammelFiles:
     input: pathlib.Path
 
 
-@dataclass
+@ dataclass
 class PyGargammelConfig:
     path: pathlib.Path
     params: ADNADamageParameterSet
     config: PyGargammelConfigParams
     files: PyGargammelFiles
 
-    @property
+    @ property
     def command(self):
         return (
             self.path + " " +
