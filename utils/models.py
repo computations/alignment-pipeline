@@ -68,9 +68,20 @@ class BetaDistribution(DistributionBase):
         return numpy.random.beta(self.alpha, self.beta)
 
 
-Distribution = StaticDistribution | UniformDistribution \
-    | GammaRateDistribution | LogNormalRateDistribution \
-    | InverseGaussianRateDistribution
+class ClampedBetaDistribution(BetaDistribution):
+    max: float
+
+    def _get(self):
+        while True:
+            val = numpy.random.beta(self.alpha, self.beta)
+            if val <= self.max:
+                return val
+
+
+Distribution = (StaticDistribution | UniformDistribution
+                | GammaRateDistribution | LogNormalRateDistribution
+                | InverseGaussianRateDistribution | BetaDistribution
+                | ClampedBetaDistribution)
 
 
 def make_distribution(type, **kwargs) -> Distribution:
@@ -88,6 +99,9 @@ def make_distribution(type, **kwargs) -> Distribution:
                 kwargs['mu'], kwargs['lambda'])
         case "Beta":
             return BetaDistribution(kwargs['alpha'], kwargs['beta'])
+        case "ClampedBeta":
+            return ClampedBetaDistribution(kwargs['alpha'], kwargs['beta'],
+                                           kwargs['max'])
 
 
 def make_adna_parameter_set(config):
@@ -125,7 +139,7 @@ class ADNADamageParameterSet:
 
 @dataclass
 class PyGargammelConfigParams:
-    min_frags: int = 1
+    min_frags: int = 10
     max_frags: int = 100
     min_length: int = 15
     ungap: bool = True
