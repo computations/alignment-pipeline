@@ -51,6 +51,7 @@ csv_fields = [
     "taxa",
     "start",
     "end",
+    "replicate",
     "formatted_name",
     "nd",
     "e_nd",
@@ -312,6 +313,13 @@ rule damage_query:
             params.load(json.load(infile))
 
         config_params = models.PyGargammelConfigParams()
+
+        if "min-fragments" in model:
+            config_params.min_frags = model["min-fragments"]
+
+        if "max-fragments" in model:
+            config_params.max_frags = model["max-fragments"]
+
         files = models.PyGargammelFiles(
             text=log.text,
             gzip=log.text,
@@ -497,6 +505,7 @@ rule align_null:
         with open(output.align, "w") as outfile:
             reference_align.write_fasta(outfile)
             realigned_query_align.write_fasta(outfile)
+
 
 for tool in tools:
 
