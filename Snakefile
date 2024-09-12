@@ -288,7 +288,7 @@ rule split_alignment:
 
 rule make_adna_damage_parameters:
     output:
-        json="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/damage-params.json",
+        json="damage/d_{damage_iter}/damage-params.json",
     run:
         model = config["exp_models"][int(wildcards.damage_iter)]
         params = models.make_adna_parameter_set(model)
@@ -299,7 +299,7 @@ rule make_adna_damage_parameters:
 rule damage_query:
     input:
         align="t_{tree_iter}/p_{pruning_iter}/query.fasta",
-        params_file="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/damage-params.json",
+        params_file="damage/d_{damage_iter}/damage-params.json",
     output:
         damaged_align="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/damage.fasta",
     log:
@@ -573,7 +573,7 @@ rule compute_distances:
         ),
         json="t_{tree_iter}/p_{pruning_iter}/pruning_info.json",
         tree="t_{tree_iter}/tree.nwk",
-        params="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/damage-params.json",
+        params="damage/d_{damage_iter}/damage-params.json",
     output:
         csv="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/epa-ng/distances.csv",
     params:
@@ -583,7 +583,9 @@ rule compute_distances:
         removed_taxa = set(json.load(open(input.json))["pruned_leaves"])
 
         model = config["exp_models"][int(wildcards.damage_iter)]
-        adna_params = models.make_adna_parameter_set(model).dict
+        adna_params = models.make_adna_parameter_set(model)
+        with open(input.params) as infile:
+            adna_params.load(json.load(infile))
 
         with open(output.csv, "w") as outfile:
             csv_file = csv.DictWriter(
@@ -605,7 +607,7 @@ rule compute_distances:
                             "pruning_iter": wildcards.pruning_iter,
                             "damage_iter": wildcards.damage_iter,
                         }
-                        | adna_params
+                        | adna_params.dict
                     )
 
 

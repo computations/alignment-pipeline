@@ -11,9 +11,9 @@ trees:
     iters: 2
 models:
   - nf:
-      type: Beta
-      alpha: 1.0
-      beta: 5.0
+      type: Uniform
+      start: 0.00
+      end: 0.03
     ov:
       type: Uniform
       start: 0.15
@@ -26,5 +26,6 @@ models:
       type: Uniform
       start: 0.0
       end: 0.65
-    iters: 10
+    iters: 30
+    min-fragments: 10
 pygargammel: ~/wrk/hits/pygargammel/pygargammel
