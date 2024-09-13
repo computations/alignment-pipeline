@@ -45,7 +45,8 @@ config["exp_models"] = expand_iter_list(config["models"])
 
 pygargammel = get_program_path("pygargammel")
 
-tools = ["muscle", "mafft", "clustalo", "hmmer", "null"]
+#tools = ["muscle", "mafft", "clustalo", "hmmer", "null"]
+tools = ["mafft", "clustalo", "hmmer", "null"]
 
 csv_fields = [
     "taxa",
@@ -288,7 +289,7 @@ rule split_alignment:
 
 rule make_adna_damage_parameters:
     output:
-        json="damage/d_{damage_iter}/damage-params.json",
+        json="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/damage-params.json",
     run:
         model = config["exp_models"][int(wildcards.damage_iter)]
         params = models.make_adna_parameter_set(model)
@@ -299,7 +300,7 @@ rule make_adna_damage_parameters:
 rule damage_query:
     input:
         align="t_{tree_iter}/p_{pruning_iter}/query.fasta",
-        params_file="damage/d_{damage_iter}/damage-params.json",
+        params_file="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/damage-params.json",
     output:
         damaged_align="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/damage.fasta",
     log:
@@ -573,7 +574,7 @@ rule compute_distances:
         ),
         json="t_{tree_iter}/p_{pruning_iter}/pruning_info.json",
         tree="t_{tree_iter}/tree.nwk",
-        params="damage/d_{damage_iter}/damage-params.json",
+        params="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/damage-params.json",
     output:
         csv="t_{tree_iter}/p_{pruning_iter}/d_{damage_iter}/epa-ng/distances.csv",
     params:
